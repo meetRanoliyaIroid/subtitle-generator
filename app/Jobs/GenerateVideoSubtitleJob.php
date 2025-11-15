@@ -15,11 +15,21 @@ class GenerateVideoSubtitleJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
+     * The number of seconds the job can run before timing out.
+     */
+    public int $timeout = 3600; // 1 hour
+
+    /**
+     * The number of times the job may be attempted.
+     */
+    public int $tries = 1;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(
         public Video $video,
-        public array $languages = []
+        public ?string $language = null
     ) {}
 
     /**
@@ -27,66 +37,65 @@ class GenerateVideoSubtitleJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $this->video->update(['status' => 'processing_subtitle']);
+        // Update status only on first language processing
+        $subtitleLanguages = $this->video->subtitle_languages ?? [];
+        if (empty($subtitleLanguages)) {
+            $this->video->update(['status' => 'processing_subtitle']);
+        }
 
         $manageFile = new ManageFile;
-        $subtitleLanguages = $this->video->subtitle_languages ?? [];
-        $successCount = 0;
-        $failedLanguages = [];
+        $subtitlePath = $manageFile->generateVideoSubtitle($this->video->video_path, $this->language);
 
-        // If no languages specified, generate with auto-detect (null language)
-        if (empty($this->languages)) {
-            $subtitlePath = $manageFile->generateVideoSubtitle($this->video->video_path);
+        if ($subtitlePath) {
+            // Update subtitle_languages array
+            $subtitleLanguages = $this->video->fresh()->subtitle_languages ?? [];
+            if ($this->language) {
+                $subtitleLanguages[$this->language] = $subtitlePath;
+            } else {
+                // For auto-detect, store as 'auto'
+                $subtitleLanguages['auto'] = $subtitlePath;
+            }
 
-            if ($subtitlePath) {
+            // Set the first subtitle as the default subtitle_path for backward compatibility
+            if (! $this->video->subtitle_path) {
                 $this->video->update([
                     'subtitle_path' => $subtitlePath,
-                    'status' => 'subtitle_generated',
                 ]);
-                GenerateVideoWithSubtitlesJob::dispatch($this->video);
-            } else {
+            }
+
+            // Update subtitle_languages
+            $this->video->update([
+                'subtitle_languages' => $subtitleLanguages,
+            ]);
+
+            // Refresh video to get latest subtitle_languages
+            $this->video->refresh();
+            $currentLanguages = $this->video->subtitle_languages ?? [];
+
+            // If this is the first subtitle generated, dispatch video generation job
+            // We'll use the first available language for video generation
+            if (count($currentLanguages) === 1) {
+                $firstLanguage = array_key_first($currentLanguages);
+                $langForVideo = ($firstLanguage === 'auto') ? null : $firstLanguage;
+                GenerateVideoWithSubtitlesJob::dispatch($this->video, $langForVideo);
+            }
+
+            // Update status
+            $this->video->update(['status' => 'subtitle_generated']);
+        } else {
+            $errorMsg = $this->language
+                ? "Failed to generate subtitle file for language: {$this->language}."
+                : 'Failed to generate subtitle file.';
+
+            // Only mark as failed if this was the only language
+            if (empty($subtitleLanguages)) {
                 $this->video->update([
                     'status' => 'failed',
-                    'error_message' => 'Failed to generate subtitle file.',
+                    'error_message' => $errorMsg,
                 ]);
-            }
-
-            return;
-        }
-
-        // Generate subtitles for each selected language
-        foreach ($this->languages as $language) {
-            $subtitlePath = $manageFile->generateVideoSubtitle($this->video->video_path, $language);
-
-            if ($subtitlePath) {
-                $subtitleLanguages[$language] = $subtitlePath;
-                $successCount++;
             } else {
-                $failedLanguages[] = $language;
+                \Illuminate\Support\Facades\Log::warning($errorMsg);
             }
-        }
-
-        if ($successCount > 0) {
-            // Set the first successful subtitle as the default subtitle_path for backward compatibility
-            $firstLanguage = array_key_first($subtitleLanguages);
-            $this->video->update([
-                'subtitle_path' => $subtitleLanguages[$firstLanguage],
-                'subtitle_languages' => $subtitleLanguages,
-                'status' => 'subtitle_generated',
-            ]);
-
-            // Dispatch job to generate video with subtitles (using first language)
-            GenerateVideoWithSubtitlesJob::dispatch($this->video, $firstLanguage);
-        } else {
-            $this->video->update([
-                'status' => 'failed',
-                'error_message' => 'Failed to generate subtitle files for all selected languages.',
-            ]);
-        }
-
-        // Log failed languages if any
-        if (! empty($failedLanguages)) {
-            \Illuminate\Support\Facades\Log::warning('Failed to generate subtitles for languages: '.implode(', ', $failedLanguages));
         }
     }
 }

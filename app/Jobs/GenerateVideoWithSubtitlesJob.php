@@ -16,6 +16,16 @@ class GenerateVideoWithSubtitlesJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
+     * The number of seconds the job can run before timing out.
+     */
+    public int $timeout = 3600; // 1 hour
+
+    /**
+     * The number of times the job may be attempted.
+     */
+    public int $tries = 1;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(

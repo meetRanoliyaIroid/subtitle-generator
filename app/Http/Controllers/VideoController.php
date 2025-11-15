@@ -46,13 +46,19 @@ class VideoController extends Controller
             'subtitle_languages' => [],
         ]);
 
-        // Dispatch job to generate subtitle for each selected language
-        GenerateVideoSubtitleJob::dispatch($video, $languages);
-
-        $languageCount = count($languages);
-        $message = $languageCount > 0
-            ? "Video uploaded successfully. Subtitle generation has started for {$languageCount} language(s)."
-            : 'Video uploaded successfully. Subtitle generation has started (auto-detect).';
+        // Dispatch separate job for each language to avoid timeout
+        if (empty($languages)) {
+            // Auto-detect: dispatch single job
+            GenerateVideoSubtitleJob::dispatch($video, null);
+            $message = 'Video uploaded successfully. Subtitle generation has started (auto-detect).';
+        } else {
+            // Dispatch a job for each language
+            foreach ($languages as $language) {
+                GenerateVideoSubtitleJob::dispatch($video, $language);
+            }
+            $languageCount = count($languages);
+            $message = "Video uploaded successfully. Subtitle generation has started for {$languageCount} language(s).";
+        }
 
         return redirect()->route('videos.index')
             ->with('success', $message);

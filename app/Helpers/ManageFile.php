@@ -167,6 +167,10 @@ class ManageFile
     public function generateVideoSubtitle($videoUrl, ?string $language = null): ?string
     {
         try {
+            // Set unlimited execution time for this process
+            set_time_limit(0);
+            ini_set('max_execution_time', 0);
+
             $fullVideoPath = storage_path('app/public/'.$videoUrl);
             $outputDir = storage_path('app/public/subtitles');
             $escapedInput = escapeshellarg($fullVideoPath);
@@ -186,6 +190,8 @@ class ManageFile
 
             $command .= ' 2>&1';
 
+            Log::info("Starting subtitle generation for video: {$videoUrl}, language: ".($language ?? 'auto'));
+
             $output = [];
             $returnCode = 0;
             exec($command, $output, $returnCode);
@@ -195,6 +201,8 @@ class ManageFile
 
                 return null;
             }
+
+            Log::info("Subtitle generation completed for video: {$videoUrl}, language: ".($language ?? 'auto'));
 
             // Don't delete the video file - we need it for embedding subtitles
             // Get The Srt File Name
