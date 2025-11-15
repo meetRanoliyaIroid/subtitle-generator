@@ -37,51 +37,70 @@ class GenerateVideoSubtitleJob implements ShouldQueue
      */
     public function handle(): void
     {
+        // Use database lock to prevent race conditions
+        $video = DB::transaction(function () {
+            return Video::lockForUpdate()->find($this->video->id);
+        });
+
+        if (! $video) {
+            Log::error("Video not found: {$this->video->id}");
+
+            return;
+        }
+
         // Update status only on first language processing
-        $subtitleLanguages = $this->video->subtitle_languages ?? [];
+        $subtitleLanguages = $video->subtitle_languages ?? [];
         if (empty($subtitleLanguages)) {
-            $this->video->update(['status' => 'processing_subtitle']);
+            $video->update(['status' => 'processing_subtitle']);
         }
 
         $manageFile = new ManageFile;
-        $subtitlePath = $manageFile->generateVideoSubtitle($this->video->video_path, $this->language);
+        $subtitlePath = $manageFile->generateVideoSubtitle($video->video_path, $this->language);
 
         if ($subtitlePath) {
-            // Update subtitle_languages array
-            $subtitleLanguages = $this->video->fresh()->subtitle_languages ?? [];
-            if ($this->language) {
-                $subtitleLanguages[$this->language] = $subtitlePath;
-            } else {
-                // For auto-detect, store as 'auto'
-                $subtitleLanguages['auto'] = $subtitlePath;
-            }
+            // Use atomic JSON update to prevent race conditions
+            $languageKey = $this->language ?? 'auto';
+            $jsonPath = '$.'.$languageKey;
+
+            // Atomically update the JSON field using raw SQL with proper parameter binding
+            // JSON_SET will merge the new value without overwriting existing keys
+            // This prevents race conditions when multiple jobs update simultaneously
+            DB::statement(
+                'UPDATE videos 
+                SET subtitle_languages = JSON_SET(
+                    COALESCE(subtitle_languages, "{}"),
+                    ?,
+                    ?
+                )
+                WHERE id = ?',
+                [$jsonPath, $subtitlePath, $video->id]
+            );
 
             // Set the first subtitle as the default subtitle_path for backward compatibility
-            if (! $this->video->subtitle_path) {
-                $this->video->update([
-                    'subtitle_path' => $subtitlePath,
-                ]);
-            }
+            // Use atomic update to prevent race condition
+            DB::statement(
+                'UPDATE videos 
+                SET subtitle_path = COALESCE(subtitle_path, ?)
+                WHERE id = ? AND subtitle_path IS NULL',
+                [$subtitlePath, $video->id]
+            );
 
-            // Update subtitle_languages
-            $this->video->update([
-                'subtitle_languages' => $subtitleLanguages,
-            ]);
+            // Refresh to get updated subtitle_languages
+            $video->refresh();
+            $currentLanguages = $video->subtitle_languages ?? [];
 
-            // Refresh video to get latest subtitle_languages
-            $this->video->refresh();
-            $currentLanguages = $this->video->subtitle_languages ?? [];
+            Log::info("Subtitle stored for language: {$languageKey}, total languages: ".count($currentLanguages).', paths: '.json_encode($currentLanguages));
 
             // If this is the first subtitle generated, dispatch video generation job
-            // We'll use the first available language for video generation
             if (count($currentLanguages) === 1) {
                 $firstLanguage = array_key_first($currentLanguages);
                 $langForVideo = ($firstLanguage === 'auto') ? null : $firstLanguage;
-                GenerateVideoWithSubtitlesJob::dispatch($this->video, $langForVideo);
+                Log::info('Dispatching video generation job with language: '.($langForVideo ?? 'auto'));
+                GenerateVideoWithSubtitlesJob::dispatch($video, $langForVideo);
             }
 
             // Update status
-            $this->video->update(['status' => 'subtitle_generated']);
+            $video->update(['status' => 'subtitle_generated']);
         } else {
             $errorMsg = $this->language
                 ? "Failed to generate subtitle file for language: {$this->language}."
@@ -89,12 +108,12 @@ class GenerateVideoSubtitleJob implements ShouldQueue
 
             // Only mark as failed if this was the only language
             if (empty($subtitleLanguages)) {
-                $this->video->update([
+                $video->update([
                     'status' => 'failed',
                     'error_message' => $errorMsg,
                 ]);
             } else {
-                \Illuminate\Support\Facades\Log::warning($errorMsg);
+                Log::warning($errorMsg);
             }
         }
     }
