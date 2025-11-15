@@ -47,28 +47,59 @@
 
                 <div class="row">
                     <div class="col-12">
-                        <h6 class="mb-3">Actions</h6>
-                        <div class="btn-group" role="group">
-                            @if($video->subtitle_path)
+                        <h6 class="mb-3">Download Subtitles</h6>
+                        @if($video->subtitle_languages && count($video->subtitle_languages) > 0)
+                            <div class="mb-3">
+                                @php
+                                    $languageNames = [
+                                        'en' => 'English',
+                                        'es' => 'Spanish',
+                                        'fr' => 'French',
+                                        'de' => 'German',
+                                        'it' => 'Italian',
+                                        'pt' => 'Portuguese',
+                                        'ru' => 'Russian',
+                                        'ja' => 'Japanese',
+                                        'ko' => 'Korean',
+                                        'zh' => 'Chinese',
+                                        'ar' => 'Arabic',
+                                        'hi' => 'Hindi',
+                                        'nl' => 'Dutch',
+                                        'pl' => 'Polish',
+                                        'tr' => 'Turkish',
+                                        'vi' => 'Vietnamese',
+                                    ];
+                                @endphp
+                                @foreach($video->subtitle_languages as $langCode => $subtitlePath)
+                                    <a href="{{ route('videos.download-subtitle', ['video' => $video, 'language' => $langCode]) }}" class="btn btn-sm btn-success me-2 mb-2">
+                                        <i class='bx bx-download me-1'></i>{{ $languageNames[$langCode] ?? strtoupper($langCode) }} (.srt)
+                                    </a>
+                                @endforeach
+                            </div>
+                        @elseif($video->subtitle_path)
+                            <div class="mb-3">
                                 <a href="{{ route('videos.download-subtitle', $video) }}" class="btn btn-success">
                                     <i class='bx bx-download me-2'></i>Download Subtitle (.srt)
                                 </a>
-                            @else
+                            </div>
+                        @else
+                            <div class="mb-3">
                                 <button class="btn btn-secondary" disabled>
                                     <i class='bx bx-time me-2'></i>Subtitle Not Available
                                 </button>
-                            @endif
+                            </div>
+                        @endif
 
-                            @if($video->video_with_subtitles_path)
-                                <a href="{{ route('videos.download-video', $video) }}" class="btn btn-primary">
-                                    <i class='bx bx-download me-2'></i>Download Video with Subtitles
-                                </a>
-                            @else
-                                <button class="btn btn-secondary" disabled>
-                                    <i class='bx bx-time me-2'></i>Video with Subtitles Not Available
-                                </button>
-                            @endif
-                        </div>
+                        <h6 class="mb-3 mt-4">Download Video with Subtitles</h6>
+                        @if($video->video_with_subtitles_path)
+                            <a href="{{ route('videos.download-video', $video) }}" class="btn btn-primary">
+                                <i class='bx bx-download me-2'></i>Download Video with Subtitles
+                            </a>
+                        @else
+                            <button class="btn btn-secondary" disabled>
+                                <i class='bx bx-time me-2'></i>Video with Subtitles Not Available
+                            </button>
+                        @endif
                     </div>
                 </div>
 

@@ -21,8 +21,12 @@ class StoreVideoRequest extends FormRequest
      */
     public function rules(): array
     {
+        $supportedLanguages = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'ar', 'hi', 'nl', 'pl', 'tr', 'vi'];
+
         return [
             'video' => ['required', 'file', 'mimes:mp4,avi,mov,wmv,flv,webm', 'max:102400'],
+            'languages' => ['nullable', 'array'],
+            'languages.*' => ['string', 'in:'.implode(',', $supportedLanguages)],
         ];
     }
 

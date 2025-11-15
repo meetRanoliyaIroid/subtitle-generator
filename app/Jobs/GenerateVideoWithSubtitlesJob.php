@@ -19,9 +19,9 @@ class GenerateVideoWithSubtitlesJob implements ShouldQueue
      * Create a new job instance.
      */
     public function __construct(
-        public Video $video
-    ) {
-    }
+        public Video $video,
+        public ?string $language = null
+    ) {}
 
     /**
      * Execute the job.
@@ -30,12 +30,32 @@ class GenerateVideoWithSubtitlesJob implements ShouldQueue
     {
         $this->video->update(['status' => 'processing_video']);
 
-        $manageFile = new ManageFile();
-        $outputPath = 'videos_with_subtitles/' . Str::uuid() . '.mp4';
+        $manageFile = new ManageFile;
+
+        // Get subtitle path based on language
+        $subtitlePath = null;
+        if ($this->language && $this->video->subtitle_languages && isset($this->video->subtitle_languages[$this->language])) {
+            $subtitlePath = $this->video->subtitle_languages[$this->language];
+        } else {
+            // Fallback to default subtitle_path
+            $subtitlePath = $this->video->subtitle_path;
+        }
+
+        if (! $subtitlePath) {
+            $this->video->update([
+                'status' => 'failed',
+                'error_message' => 'Subtitle file not found for video generation.',
+            ]);
+
+            return;
+        }
+
+        $languageSuffix = $this->language ? '_'.$this->language : '';
+        $outputPath = 'videos_with_subtitles/'.Str::uuid().$languageSuffix.'.mp4';
 
         $result = $manageFile->embedSubtitlesIntoVideo(
             $this->video->video_path,
-            $this->video->subtitle_path,
+            $subtitlePath,
             $outputPath
         );
 

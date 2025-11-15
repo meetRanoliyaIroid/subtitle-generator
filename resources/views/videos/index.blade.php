@@ -39,7 +39,22 @@
                                                 <a href="{{ route('videos.show', $video) }}" class="btn btn-sm btn-outline-primary">
                                                     <i class='bx bx-show'></i> View
                                                 </a>
-                                                @if($video->subtitle_path)
+                                                @if($video->subtitle_languages && count($video->subtitle_languages) > 0)
+                                                    <div class="btn-group" role="group">
+                                                        <button type="button" class="btn btn-sm btn-outline-success dropdown-toggle" data-bs-toggle="dropdown">
+                                                            <i class='bx bx-download'></i> Subtitles
+                                                        </button>
+                                                        <ul class="dropdown-menu">
+                                                            @foreach($video->subtitle_languages as $langCode => $subtitlePath)
+                                                                <li>
+                                                                    <a class="dropdown-item" href="{{ route('videos.download-subtitle', ['video' => $video, 'language' => $langCode]) }}">
+                                                                        {{ strtoupper($langCode) }} (.srt)
+                                                                    </a>
+                                                                </li>
+                                                            @endforeach
+                                                        </ul>
+                                                    </div>
+                                                @elseif($video->subtitle_path)
                                                     <a href="{{ route('videos.download-subtitle', $video) }}" class="btn btn-sm btn-outline-success">
                                                         <i class='bx bx-download'></i> Subtitle
                                                     </a>

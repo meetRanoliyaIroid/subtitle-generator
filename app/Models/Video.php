@@ -13,6 +13,7 @@ class Video extends Model
         'original_name',
         'video_path',
         'subtitle_path',
+        'subtitle_languages',
         'video_with_subtitles_path',
         'status',
         'error_message',
@@ -21,6 +22,7 @@ class Video extends Model
     protected function casts(): array
     {
         return [
+            'subtitle_languages' => 'array',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
