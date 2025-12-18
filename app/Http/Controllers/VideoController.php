@@ -33,7 +33,7 @@ class VideoController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(StoreVideoRequest $request): RedirectResponse
+    public function store(StoreVideoRequest $request)
     {
         $file = $request->file('video');
         $fileName = $file->getClientOriginalName();
@@ -47,6 +47,15 @@ class VideoController extends Controller
 
         // Dispatch job to generate subtitle
         GenerateVideoSubtitleJob::dispatch($video);
+
+        // Check if it's an AJAX request
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'video_id' => $video->id,
+                'message' => 'Video uploaded successfully. Subtitle generation has started.'
+            ]);
+        }
 
         return redirect()->route('videos.index')
             ->with('success', 'Video uploaded successfully. Subtitle generation has started.');
@@ -85,6 +94,30 @@ class VideoController extends Controller
         $downloadName = $originalName . '_with_subtitles.mp4';
 
         return Storage::disk('public')->download($video->video_with_subtitles_path, $downloadName);
+    }
+
+    /**
+     * Get video processing status
+     */
+    public function getStatus(Video $video)
+    {
+        $subtitleUrl = null;
+        $videoUrl = null;
+
+        if ($video->subtitle_path) {
+            $subtitleUrl = route('videos.download-subtitle', $video);
+        }
+
+        if ($video->video_with_subtitles_path) {
+            $videoUrl = route('videos.download-video', $video);
+        }
+
+        return response()->json([
+            'status' => $video->status,
+            'subtitle_url' => $subtitleUrl,
+            'video_url' => $videoUrl,
+            'error_message' => $video->error_message,
+        ]);
     }
 
     /**
